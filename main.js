@@ -61,11 +61,23 @@
   }
 
   /* ── CANVAS SIZING ── */
+  function isMobile() {
+    return window.innerWidth <= 768;
+  }
+
   function sizeCanvas() {
     const first = frames[0];
     if (!first || !first.naturalWidth) return;
-    canvas.width = first.naturalWidth;
-    canvas.height = first.naturalHeight;
+
+    if (isMobile()) {
+      /* On mobile: match the actual viewport so the canvas fills screen */
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    } else {
+      /* Desktop: natural image resolution — unchanged */
+      canvas.width  = first.naturalWidth;
+      canvas.height = first.naturalHeight;
+    }
   }
 
   /* ── DRAW A SINGLE FRAME ── */
@@ -74,12 +86,40 @@
     const img = frames[i];
     if (!img || !img.complete || img.naturalWidth === 0) return;
 
-    /* White background — keeps edges clean on any background */
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (isMobile()) {
+      /* ── MOBILE: object-fit:cover with upward face-bias ─────────────
+         Scale the image so it fully covers the canvas (like CSS cover),
+         then offset vertically so the top 15% of the image is at the
+         canvas top — keeping the subject's face visible.
+      ─────────────────────────────────────────────────────────────── */
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const iw = img.naturalWidth;
+      const ih = img.naturalHeight;
 
-    /* Silhouette — sharp, no effects */
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      /* Scale factor: whichever axis needs more coverage */
+      const scale = Math.max(cw / iw, ch / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+
+      /* Face-bias: anchor 15% from top of the image to top of canvas.
+         Clamp so image never leaves the canvas edges. */
+      const faceAnchor = 0.15;          /* 0 = very top, 0.5 = centre */
+      let dx = (cw - dw) / 2;          /* always h-centred */
+      let dy = -(dh * faceAnchor);     /* vertical anchor */
+      /* Clamp dy: don't expose white above or below the frame */
+      dy = Math.max(ch - dh, Math.min(0, dy));
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(img, dx, dy, dw, dh);
+
+    } else {
+      /* ── DESKTOP: original rendering — completely unchanged ── */
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    }
   }
 
   /* ── SCROLL → FRAME MAPPING ── */
@@ -116,8 +156,11 @@
     /* Draw */
     drawFrame(displayFrame);
 
-    /* Subtle zoom-out on canvas wrapper */
-    const scale = SCALE_START + (SCALE_END - SCALE_START) * progress;
+    /* Zoom-out on canvas wrapper:
+       Mobile gets a subtler range (1.0 → 0.99) to avoid visual noise.
+       Desktop keeps the original range (1.0 → 0.98). */
+    const scaleEnd = isMobile() ? 0.99 : SCALE_END;
+    const scale = SCALE_START + (scaleEnd - SCALE_START) * progress;
     canvasWrap.style.transform = `scale(${scale.toFixed(4)})`;
 
     /* Fade hero label out as progression advances */
@@ -126,6 +169,7 @@
       labelEl.style.opacity = Math.max(0, 0.35 * (1 - progress * 3)).toFixed(3);
     }
   }
+
 
   /* ── NAVBAR SCROLL BEHAVIOUR ── */
   function handleNavbar() {
